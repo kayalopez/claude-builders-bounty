@@ -45,6 +45,7 @@ class DestructiveCommandGuardTests(unittest.TestCase):
         self.assertTrue(self.hook.blocked_reason("rm -rf /tmp/build"))
         self.assertTrue(self.hook.blocked_reason("sudo rm -fr ./dist"))
         self.assertTrue(self.hook.blocked_reason("env FOO=1 rm -rf ./dist"))
+        self.assertTrue(self.hook.blocked_reason("env -- rm -rf ./dist"))
         self.assertTrue(self.hook.blocked_reason("env -u FOO BAR=1 rm -Rf ./dist"))
         self.assertTrue(self.hook.blocked_reason("rm --recursive --force ./cache"))
 
@@ -54,6 +55,7 @@ class DestructiveCommandGuardTests(unittest.TestCase):
         self.assertTrue(self.hook.blocked_reason("git push --force origin main"))
         self.assertTrue(self.hook.blocked_reason("git -C repo push --force-with-lease origin main"))
         self.assertTrue(self.hook.blocked_reason("git -c safe.directory=* push -f origin main"))
+        self.assertTrue(self.hook.blocked_reason("git --no-pager push -f origin main"))
         self.assertTrue(self.hook.blocked_reason("git push -f origin main"))
         self.assertTrue(self.hook.blocked_reason("psql -c 'DELETE FROM users'"))
 

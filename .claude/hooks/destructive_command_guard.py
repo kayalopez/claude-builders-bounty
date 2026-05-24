@@ -53,6 +53,9 @@ def strip_env_args(segment: list[str]) -> list[str]:
         if is_assignment(token):
             segment = segment[1:]
             continue
+        if token == "--":
+            segment = segment[1:]
+            break
         if token in {"-i", "--ignore-environment"}:
             segment = segment[1:]
             continue
@@ -131,6 +134,18 @@ def skip_git_global_option(args: list[str], index: int) -> int:
     option = args[index]
     if option in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
         return index + 2
+    if option in {
+        "--bare",
+        "--no-pager",
+        "--no-replace-objects",
+        "--literal-pathspecs",
+        "--glob-pathspecs",
+        "--noglob-pathspecs",
+        "--icase-pathspecs",
+        "--no-optional-locks",
+        "-P",
+    }:
+        return index + 1
     if option.startswith(("--git-dir=", "--work-tree=", "--namespace=")):
         return index + 1
     return index
