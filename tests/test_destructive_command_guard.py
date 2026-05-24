@@ -44,12 +44,16 @@ class DestructiveCommandGuardTests(unittest.TestCase):
     def test_blocks_rm_recursive_force_variants(self):
         self.assertTrue(self.hook.blocked_reason("rm -rf /tmp/build"))
         self.assertTrue(self.hook.blocked_reason("sudo rm -fr ./dist"))
+        self.assertTrue(self.hook.blocked_reason("env FOO=1 rm -rf ./dist"))
+        self.assertTrue(self.hook.blocked_reason("env -u FOO BAR=1 rm -Rf ./dist"))
         self.assertTrue(self.hook.blocked_reason("rm --recursive --force ./cache"))
 
     def test_blocks_sql_and_force_push_patterns(self):
         self.assertTrue(self.hook.blocked_reason("psql -c 'DROP TABLE users'"))
         self.assertTrue(self.hook.blocked_reason("mysql -e 'TRUNCATE TABLE sessions'"))
         self.assertTrue(self.hook.blocked_reason("git push --force origin main"))
+        self.assertTrue(self.hook.blocked_reason("git -C repo push --force-with-lease origin main"))
+        self.assertTrue(self.hook.blocked_reason("git -c safe.directory=* push -f origin main"))
         self.assertTrue(self.hook.blocked_reason("git push -f origin main"))
         self.assertTrue(self.hook.blocked_reason("psql -c 'DELETE FROM users'"))
 
@@ -57,6 +61,7 @@ class DestructiveCommandGuardTests(unittest.TestCase):
         self.assertIsNone(self.hook.blocked_reason("ls -la && npm test"))
         self.assertIsNone(self.hook.blocked_reason("rm -r ./build"))
         self.assertIsNone(self.hook.blocked_reason("git push origin main"))
+        self.assertIsNone(self.hook.blocked_reason("git -C repo status --short"))
         self.assertIsNone(
             self.hook.blocked_reason("psql -c 'DELETE FROM users WHERE id = 1'")
         )

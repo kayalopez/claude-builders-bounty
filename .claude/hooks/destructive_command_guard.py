@@ -15,15 +15,11 @@ from typing import Iterable
 
 BLOCKED_LOG = Path.home() / ".claude" / "hooks" / "blocked.log"
 SHELL_SEPARATORS = {";", "&&", "||", "|", "\n"}
-RM_WRAPPERS = {"sudo", "doas", "command", "builtin", "time", "env"}
+COMMAND_WRAPPERS = {"sudo", "doas", "command", "builtin", "time"}
 
 DROP_TABLE_RE = re.compile(r"\bdrop\s+table\b", re.IGNORECASE)
 TRUNCATE_RE = re.compile(r"\btruncate(?:\s+table)?\b", re.IGNORECASE)
 DELETE_FROM_RE = re.compile(r"\bdelete\s+from\b", re.IGNORECASE)
-GIT_FORCE_PUSH_RE = re.compile(
-    r"(?:^|[;&|]\s*)git\s+push\b[^\n;&|]*(?:--force(?:-with-lease)?|-f)\b",
-    re.IGNORECASE,
-)
 
 
 def tokenize(command: str) -> list[str]:
@@ -48,6 +44,46 @@ def command_segments(tokens: Iterable[str]) -> Iterable[list[str]]:
 
 def is_assignment(token: str) -> bool:
     return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*=.*", token))
+
+
+def strip_env_args(segment: list[str]) -> list[str]:
+    segment = segment[1:]
+    while segment:
+        token = segment[0]
+        if is_assignment(token):
+            segment = segment[1:]
+            continue
+        if token in {"-i", "--ignore-environment"}:
+            segment = segment[1:]
+            continue
+        if token in {"-u", "--unset"} and len(segment) > 1:
+            segment = segment[2:]
+            continue
+        if token.startswith("--unset="):
+            segment = segment[1:]
+            continue
+        break
+    return segment
+
+
+def strip_command_prefix(segment: list[str]) -> list[str]:
+    while segment:
+        while segment and is_assignment(segment[0]):
+            segment = segment[1:]
+        if not segment:
+            return segment
+
+        command_name = os.path.basename(segment[0])
+        if command_name in COMMAND_WRAPPERS:
+            segment = segment[1:]
+            if segment and segment[0] == "--":
+                segment = segment[1:]
+            continue
+        if command_name == "env":
+            segment = strip_env_args(segment)
+            continue
+        return segment
+    return segment
 
 
 def rm_has_recursive_force_options(args: Iterable[str]) -> bool:
@@ -84,15 +120,61 @@ def contains_rm_rf(command: str) -> bool:
         return bool(re.search(r"\brm\s+-[A-Za-z]*r[A-Za-z]*f|rm\s+-[A-Za-z]*f[A-Za-z]*r", command))
 
     for segment in command_segments(tokens):
-        while segment and is_assignment(segment[0]):
-            segment = segment[1:]
-        while segment and segment[0] in RM_WRAPPERS:
-            segment = segment[1:]
-            if segment and segment[0] == "--":
-                segment = segment[1:]
+        segment = strip_command_prefix(segment)
         if segment and os.path.basename(segment[0]) == "rm" and rm_has_recursive_force_options(segment[1:]):
             return True
 
+    return False
+
+
+def skip_git_global_option(args: list[str], index: int) -> int:
+    option = args[index]
+    if option in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
+        return index + 2
+    if option.startswith(("--git-dir=", "--work-tree=", "--namespace=")):
+        return index + 1
+    return index
+
+
+def git_push_has_force(args: Iterable[str]) -> bool:
+    for arg in args:
+        if arg == "--":
+            continue
+        if arg.startswith("--force"):
+            return True
+        if arg.startswith("-") and not arg.startswith("--") and "f" in arg.lstrip("-"):
+            return True
+    return False
+
+
+def contains_git_force_push(command: str) -> bool:
+    try:
+        tokens = tokenize(command)
+    except ValueError:
+        return bool(
+            re.search(
+                r"(?:^|[;&|]\s*)git\s+push\b[^\n;&|]*(?:--force(?:-with-lease)?(?:=\S+)?|-f)\b",
+                command,
+                re.IGNORECASE,
+            )
+        )
+
+    for segment in command_segments(tokens):
+        segment = strip_command_prefix(segment)
+        if not segment or os.path.basename(segment[0]) != "git":
+            continue
+
+        index = 1
+        while index < len(segment):
+            next_index = skip_git_global_option(segment, index)
+            if next_index != index:
+                index = next_index
+                continue
+            break
+
+        if index < len(segment) and segment[index] == "push":
+            if git_push_has_force(segment[index + 1 :]):
+                return True
     return False
 
 
@@ -111,7 +193,7 @@ def contains_delete_without_where(command: str) -> bool:
 def blocked_reason(command: str) -> str | None:
     if contains_rm_rf(command):
         return "Blocked destructive rm command using recursive and force options."
-    if GIT_FORCE_PUSH_RE.search(command):
+    if contains_git_force_push(command):
         return "Blocked force push command."
     if DROP_TABLE_RE.search(command):
         return "Blocked destructive SQL DROP TABLE command."

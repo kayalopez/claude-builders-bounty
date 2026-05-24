@@ -52,11 +52,13 @@ It blocks high-risk Bash commands before execution, logs each blocked attempt to
 Blocked patterns:
 
 - `rm` commands using both recursive and force options, including `rm -rf`, `rm -fr`,
-  and `rm --recursive --force`.
+  `rm --recursive --force`, and wrapper forms like `sudo rm -rf` or
+  `env VAR=value rm -rf`.
 - `DROP TABLE`.
 - `TRUNCATE` and `TRUNCATE TABLE`.
 - `DELETE FROM` when the statement has no `WHERE` clause.
-- `git push --force`, `git push --force-with-lease`, and `git push -f`.
+- `git push --force`, `git push --force-with-lease`, and `git push -f`,
+  including common global-option forms like `git -C repo push -f`.
 
 Install in 2 commands:
 
